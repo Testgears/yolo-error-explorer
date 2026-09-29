@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# User datasets and model outputs
+data/
+datasets/
+runs/
+
+# Generated evaluation files
+test_metrics.csv
+per_image_metrics.csv

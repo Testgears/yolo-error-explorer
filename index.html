@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YOLO Error Visualizer</title>
+<style>
+  :root {
+    --bg:       #0f1117;
+    --surface:  #181c27;
+    --border:   #252a38;
+    --accent:   #4f8ef7;
+    --gt:       #22c55e;
+    --pred:     #60a5fa;
+    --fn-badge: #ef4444;
+    --tp-badge: #22c55e;
+    --fp-badge: #f59e0b;
+    --muted:    #6b7280;
+    --text:     #e2e8f0;
+    --text-dim: #94a3b8;
+    --mono:     'JetBrains Mono', 'Fira Mono', monospace;
+    --sans:     'Inter', system-ui, sans-serif;
+    --radius:   6px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── TOP BAR ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  header h1 span { color: var(--accent); }
+
+  .header-stats {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .stat-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-family: var(--mono);
+    color: var(--text-dim);
+  }
+  .stat-pill b { color: var(--text); }
+
+  .spacer { flex: 1; }
+
+  /* ── LOAD PANEL ── */
+  #load-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+    padding: 40px 20px;
+  }
+  #load-panel h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  #load-panel p {
+    color: var(--text-dim);
+    font-size: 13px;
+    text-align: center;
+    max-width: 480px;
+    line-height: 1.6;
+  }
+
+  .drop-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .drop-zone {
+    width: 220px;
+    border: 1.5px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 24px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    background: var(--surface);
+  }
+  .drop-zone:hover, .drop-zone.over { border-color: var(--accent); background: #1a2240; }
+  .drop-zone.ready { border-color: var(--gt); }
+  .drop-zone input { display: none; }
+  .drop-zone .dz-icon { font-size: 28px; margin-bottom: 8px; }
+  .drop-zone .dz-label { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .drop-zone .dz-label b { color: var(--text); display: block; margin-bottom: 4px; }
+  .drop-zone .dz-count { font-size: 11px; color: var(--gt); margin-top: 6px; font-family: var(--mono); }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 10px 28px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .btn-primary:disabled { opacity: .35; cursor: default; }
+  .btn-primary:not(:disabled):hover { opacity: .85; }
+
+  /* ── MAIN LAYOUT ── */
+  #app { display: none; flex: 1; overflow: hidden; }
+  #app.visible { display: flex; }
+
+  /* sidebar */
+  #sidebar {
+    width: 320px;
+    min-width: 220px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .sidebar-toolbar {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .sidebar-toolbar input[type=text] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 10px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+  }
+  .sidebar-toolbar input[type=text]:focus { border-color: var(--accent); }
+
+  .filter-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .filter-row label { font-size: 11px; color: var(--text-dim); }
+  .filter-row select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 12px;
+    padding: 3px 6px;
+    outline: none;
+    cursor: pointer;
+  }
+  .filter-row select:focus { border-color: var(--accent); }
+  #fn-min-input {
+    width: 54px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 12px;
+    padding: 3px 6px;
+    outline: none;
+  }
+
+  /* image list */
+  #image-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0;
+  }
+  #image-list::-webkit-scrollbar { width: 5px; }
+  #image-list::-webkit-scrollbar-track { background: transparent; }
+  #image-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .list-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: background .12s;
+    user-select: none;
+  }
+  .list-item:hover { background: #1e2336; }
+  .list-item.active {
+    background: #1a2240;
+    border-left-color: var(--accent);
+  }
+  .list-thumb {
+    width: 44px;
+    height: 32px;
+    object-fit: cover;
+    border-radius: 3px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .list-thumb-placeholder {
+    width: 44px;
+    height: 32px;
+    border-radius: 3px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: var(--muted);
+  }
+  .list-info { flex: 1; min-width: 0; }
+  .list-name {
+    font-size: 12px;
+    font-family: var(--mono);
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .list-badges { display: flex; gap: 4px; margin-top: 3px; flex-wrap: wrap; }
+  .badge {
+    font-size: 10px;
+    font-family: var(--mono);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+  .badge-fn { background: #3d1515; color: var(--fn-badge); }
+  .badge-tp { background: #14301c; color: var(--tp-badge); }
+  .badge-fp { background: #332200; color: var(--fp-badge); }
+  .badge-f1 { background: #1a1f30; color: var(--text-dim); }
+
+  /* main viewer */
+  #viewer {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #viewer-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: var(--surface);
+  }
+  #viewer-title {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    flex: 1;
+  }
+
+  .legend { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-dim); }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+  .toggle-row { display: flex; gap: 8px; align-items: center; }
+  .toggle-btn {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .toggle-btn.on { background: #1a2240; border-color: var(--accent); color: var(--text); }
+
+  #canvas-wrap {
+    flex: 1;
+    overflow: auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 0;
+    background: #0c0e15;
+  }
+  #canvas-wrap::-webkit-scrollbar { width: 6px; height: 6px; }
+  #canvas-wrap::-webkit-scrollbar-track { background: transparent; }
+  #canvas-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .canvas-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+    padding: 12px;
+  }
+  .canvas-panel + .canvas-panel {
+    border-left: 1px solid var(--border);
+  }
+  .canvas-label {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-bottom: 8px;
+    align-self: flex-start;
+  }
+  .canvas-label span {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+
+  #main-canvas, #orig-canvas {
+    image-rendering: pixelated;
+    display: block;
+    max-width: 100%;
+  }
+
+  /* empty / loading states */
+  #empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--muted);
+  }
+  #empty-state .big { font-size: 40px; }
+  #empty-state p { font-size: 13px; }
+
+  /* metrics panel */
+  #metrics-bar {
+    border-top: 1px solid var(--border);
+    padding: 10px 16px;
+    background: var(--surface);
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .metric-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .metric-val { font-size: 16px; font-weight: 700; font-family: var(--mono); }
+  .metric-lbl { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; }
+  .metric-val.red { color: var(--fn-badge); }
+  .metric-val.green { color: var(--tp-badge); }
+  .metric-val.amber { color: var(--fp-badge); }
+  .metric-val.blue { color: var(--pred); }
+  .divider-v { width: 1px; background: var(--border); height: 32px; }
+
+  /* empty list */
+  .list-empty {
+    padding: 24px 12px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<!-- LOAD PANEL -->
+<div id="load-panel">
+  <h2>YOLO Error Visualizer</h2>
+  <p>Load your <code>per_image_metrics.csv</code> (from the evaluation script) and the folder of validation images. The dashboard will render each image with GT and predicted boxes overlaid, sorted by false negatives.</p>
+
+  <div class="drop-row">
+    <!-- CSV drop -->
+    <div class="drop-zone" id="csv-zone" onclick="document.getElementById('csv-input').click()">
+      <div class="dz-icon">📄</div>
+      <div class="dz-label"><b>Metrics CSV</b>per_image_metrics.csv</div>
+      <div class="dz-count" id="csv-status">Drop or click to load</div>
+      <input type="file" id="csv-input" accept=".csv" />
+    </div>
+
+    <!-- Images drop -->
+    <div class="drop-zone" id="img-zone" onclick="document.getElementById('img-input').click()">
+      <div class="dz-icon">🖼️</div>
+      <div class="dz-label"><b>Validation images</b>Select the images folder</div>
+      <div class="dz-count" id="img-status">Drop or click to load</div>
+      <input type="file" id="img-input" multiple accept="image/*" webkitdirectory />
+    </div>
+
+    <!-- GT labels -->
+    <div class="drop-zone" id="gt-zone" onclick="document.getElementById('gt-input').click()">
+      <div class="dz-icon">🏷️</div>
+      <div class="dz-label"><b>GT labels folder</b>(optional — for box overlay)</div>
+      <div class="dz-count" id="gt-status">Drop or click to load</div>
+      <input type="file" id="gt-input" multiple accept=".txt" webkitdirectory />
+    </div>
+
+    <!-- Pred labels -->
+    <div class="drop-zone" id="pred-zone" onclick="document.getElementById('pred-input').click()">
+      <div class="dz-icon">🤖</div>
+      <div class="dz-label"><b>Pred labels folder</b>(optional — for box overlay)</div>
+      <div class="dz-count" id="pred-status">Drop or click to load</div>
+      <input type="file" id="pred-input" multiple accept=".txt" webkitdirectory />
+    </div>
+  </div>
+
+  <button class="btn-primary" id="launch-btn" disabled>Open Dashboard →</button>
+</div>
+
+<!-- MAIN APP -->
+<header style="display:none" id="app-header">
+  <h1>YOLO Error Visualizer</span></h1>
+  <div class="header-stats" id="global-stats"></div>
+  <div class="spacer"></div>
+  <button class="btn-primary" onclick="resetApp()" style="font-size:12px;padding:6px 14px;">← Reload</button>
+</header>
+
+<div id="app">
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sidebar-toolbar">
+      <input type="text" id="search-box" placeholder="Search image name…" oninput="renderList()" />
+      <div class="filter-row">
+        <label>Min FN</label>
+        <input type="number" id="fn-min-input" value="1" min="0" oninput="renderList()" />
+        <label style="margin-left:6px">Sort</label>
+        <select id="sort-select" onchange="renderList()">
+          <option value="fn_desc">FN ↓</option>
+          <option value="fn_asc">FN ↑</option>
+          <option value="recall_asc">Recall ↑</option>
+          <option value="recall_desc">Recall ↓</option>
+          <option value="f1_asc">F1 ↑</option>
+          <option value="name_asc">Name</option>
+        </select>
+      </div>
+    </div>
+    <div id="image-list"></div>
+  </div>
+
+  <!-- Viewer -->
+  <div id="viewer">
+    <div id="viewer-header">
+      <span id="viewer-title" style="color:var(--muted)">Select an image</span>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--gt)"></div>Ground truth</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--pred)"></div>Prediction</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--fn-badge)"></div>Missed (FN)</div>
+      </div>
+      <div class="toggle-row">
+        <button class="toggle-btn on" id="tog-gt" onclick="toggleLayer('gt')">GT</button>
+        <button class="toggle-btn on" id="tog-pred" onclick="toggleLayer('pred')">Pred</button>
+      </div>
+    </div>
+
+    <div id="canvas-wrap">
+      <div id="empty-state">
+        <div class="big">🔍</div>
+        <p>Select an image from the list to inspect it.</p>
+      </div>
+      <div id="split-view" style="display:none; width:100%; height:100%;">
+        <div style="display:flex; height:100%; min-width:0;">
+          <div class="canvas-panel">
+            <div class="canvas-label"><span style="background:#4b5563"></span>Original</div>
+            <canvas id="orig-canvas"></canvas>
+          </div>
+          <div class="canvas-panel">
+            <div class="canvas-label"><span style="background:var(--fn-badge)"></span>Annotated</div>
+            <canvas id="main-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="metrics-bar" style="display:none">
+      <div class="metric-group"><div class="metric-val red" id="m-fn">—</div><div class="metric-lbl">False Neg</div></div>
+      <div class="metric-group"><div class="metric-val green" id="m-tp">—</div><div class="metric-lbl">True Pos</div></div>
+      <div class="metric-group"><div class="metric-val amber" id="m-fp">—</div><div class="metric-lbl">False Pos</div></div>
+      <div class="divider-v"></div>
+      <div class="metric-group"><div class="metric-val blue" id="m-gt">—</div><div class="metric-lbl">GT boxes</div></div>
+      <div class="metric-group"><div class="metric-val blue" id="m-pred">—</div><div class="metric-lbl">Pred boxes</div></div>
+      <div class="divider-v"></div>
+      <div class="metric-group"><div class="metric-val" id="m-prec">—</div><div class="metric-lbl">Precision</div></div>
+      <div class="metric-group"><div class="metric-val" id="m-rec">—</div><div class="metric-lbl">Recall</div></div>
+      <div class="metric-group"><div class="metric-val" id="m-f1">—</div><div class="metric-lbl">F1</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────────
+let csvRows = [];           // parsed CSV rows
+let imageMap = {};          // stem → File
+let gtMap = {};             // stem → parsed boxes [{class, points}]
+let predMap = {};           // stem → parsed boxes [{class, points, conf}]
+let currentRow = null;
+let layers = { gt: true, pred: true };
+
+// ── FILE INPUTS ────────────────────────────────────────────────────
+document.getElementById('csv-input').addEventListener('change', e => handleCSV(e.target.files[0]));
+document.getElementById('img-input').addEventListener('change', e => handleImages(e.target.files));
+document.getElementById('gt-input').addEventListener('change', e => handleLabels(e.target.files, 'gt'));
+document.getElementById('pred-input').addEventListener('change', e => handleLabels(e.target.files, 'pred'));
+
+// drag-and-drop for each zone
+['csv-zone','img-zone','gt-zone','pred-zone'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('dragover', ev => { ev.preventDefault(); el.classList.add('over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('over'));
+  el.addEventListener('drop', ev => {
+    ev.preventDefault(); el.classList.remove('over');
+    const files = ev.dataTransfer.files;
+    if (id === 'csv-zone') handleCSV(files[0]);
+    else if (id === 'img-zone') handleImages(files);
+    else if (id === 'gt-zone') handleLabels(files, 'gt');
+    else handleLabels(files, 'pred');
+  });
+});
+
+function stem(filename) {
+  return filename.replace(/\.[^/.]+$/, '');
+}
+
+async function handleCSV(file) {
+  if (!file) return;
+  const text = await file.text();
+  csvRows = parseCSV(text);
+  document.getElementById('csv-status').textContent = `✓ ${csvRows.length} rows loaded`;
+  document.getElementById('csv-zone').classList.add('ready');
+  checkReady();
+}
+
+function handleImages(files) {
+  imageMap = {};
+  for (const f of files) imageMap[stem(f.name)] = f;
+  const n = Object.keys(imageMap).length;
+  document.getElementById('img-status').textContent = `✓ ${n} images loaded`;
+  document.getElementById('img-zone').classList.add('ready');
+  checkReady();
+}
+
+function handleLabels(files, type) {
+  const map = type === 'gt' ? gtMap : predMap;
+  let count = 0;
+  const promises = [];
+  for (const f of files) {
+    promises.push(f.text().then(txt => {
+      const s = stem(f.name);
+      map[s] = type === 'gt' ? parseGT(txt) : parsePred(txt);
+      count++;
+    }));
+  }
+  Promise.all(promises).then(() => {
+    const el = document.getElementById(type === 'gt' ? 'gt-status' : 'pred-status');
+    el.textContent = `✓ ${count} label files`;
+    document.getElementById(type === 'gt' ? 'gt-zone' : 'pred-zone').classList.add('ready');
+  });
+}
+
+function checkReady() {
+  const ok = csvRows.length > 0 && Object.keys(imageMap).length > 0;
+  document.getElementById('launch-btn').disabled = !ok;
+}
+
+document.getElementById('launch-btn').addEventListener('click', launchApp);
+
+// ── CSV PARSER ─────────────────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const vals = line.split(',');
+    const row = {};
+    headers.forEach((h, i) => { row[h] = vals[i]?.trim(); });
+    row.fn = parseInt(row.fn) || 0;
+    row.tp = parseInt(row.tp) || 0;
+    row.fp = parseInt(row.fp) || 0;
+    row.gt = parseInt(row.gt) || 0;
+    row.pred = parseInt(row.pred) || 0;
+    row.precision = parseFloat(row.precision) || 0;
+    row.recall = parseFloat(row.recall) || 0;
+    row.f1 = parseFloat(row.f1) || 0;
+    return row;
+  });
+}
+
+// ── LABEL PARSERS ──────────────────────────────────────────────────
+function parseGT(text) {
+  return text.trim().split('\n').filter(Boolean).map(line => {
+    const p = line.split(/\s+/);
+    if (p.length < 9) return null;
+    const coords = p.slice(1, 9).map(Number);
+    return { class: parseInt(p[0]), points: [[coords[0],coords[1]],[coords[2],coords[3]],[coords[4],coords[5]],[coords[6],coords[7]]] };
+  }).filter(Boolean);
+}
+
+function parsePred(text) {
+  return text.trim().split('\n').filter(Boolean).map(line => {
+    const p = line.split(/\s+/);
+    if (p.length < 10) return null;
+    const coords = p.slice(1, 9).map(Number);
+    return { class: parseInt(p[0]), points: [[coords[0],coords[1]],[coords[2],coords[3]],[coords[4],coords[5]],[coords[6],coords[7]]], conf: parseFloat(p[9]) };
+  }).filter(Boolean);
+}
+
+// ── LAUNCH ────────────────────────────────────────────────────────
+function launchApp() {
+  document.getElementById('load-panel').style.display = 'none';
+  document.getElementById('app-header').style.display = 'flex';
+  document.getElementById('app').classList.add('visible');
+  renderGlobalStats();
+  renderList();
+}
+
+function resetApp() {
+  location.reload();
+}
+
+function renderGlobalStats() {
+  const totalFN = csvRows.reduce((s, r) => s + r.fn, 0);
+  const totalTP = csvRows.reduce((s, r) => s + r.tp, 0);
+  const totalFP = csvRows.reduce((s, r) => s + r.fp, 0);
+  const meanRecall = (csvRows.reduce((s, r) => s + r.recall, 0) / csvRows.length).toFixed(3);
+  const meanF1 = (csvRows.reduce((s, r) => s + r.f1, 0) / csvRows.length).toFixed(3);
+  const withFN = csvRows.filter(r => r.fn > 0).length;
+
+  document.getElementById('global-stats').innerHTML = `
+    <div class="stat-pill">Images <b>${csvRows.length}</b></div>
+    <div class="stat-pill">w/ FN <b style="color:var(--fn-badge)">${withFN}</b></div>
+    <div class="stat-pill">Total FN <b style="color:var(--fn-badge)">${totalFN}</b></div>
+    <div class="stat-pill">Total TP <b style="color:var(--gt)">${totalTP}</b></div>
+    <div class="stat-pill">Total FP <b style="color:var(--fp-badge)">${totalFP}</b></div>
+    <div class="stat-pill">mRecall <b>${meanRecall}</b></div>
+    <div class="stat-pill">mF1 <b>${meanF1}</b></div>
+  `;
+}
+
+// ── SIDEBAR LIST ───────────────────────────────────────────────────
+function renderList() {
+  const query = document.getElementById('search-box').value.toLowerCase();
+  const minFN = parseInt(document.getElementById('fn-min-input').value) || 0;
+  const sort = document.getElementById('sort-select').value;
+
+  let rows = csvRows.filter(r => {
+    if (r.fn < minFN) return false;
+    if (query && !r.image.toLowerCase().includes(query)) return false;
+    return true;
+  });
+
+  rows.sort((a, b) => {
+    if (sort === 'fn_desc') return b.fn - a.fn;
+    if (sort === 'fn_asc') return a.fn - b.fn;
+    if (sort === 'recall_asc') return a.recall - b.recall;
+    if (sort === 'recall_desc') return b.recall - a.recall;
+    if (sort === 'f1_asc') return a.f1 - b.f1;
+    if (sort === 'name_asc') return a.image.localeCompare(b.image);
+    return 0;
+  });
+
+  const list = document.getElementById('image-list');
+  if (rows.length === 0) {
+    list.innerHTML = `<div class="list-empty">No images match filters.</div>`;
+    return;
+  }
+
+  list.innerHTML = rows.map(r => {
+    const isActive = currentRow && currentRow.image === r.image ? 'active' : '';
+    const imgFile = imageMap[r.image];
+    const thumbHtml = imgFile
+      ? `<img class="list-thumb" src="${URL.createObjectURL(imgFile)}" />`
+      : `<div class="list-thumb-placeholder">📷</div>`;
+
+    return `<div class="list-item ${isActive}" onclick="selectImage('${r.image}')">
+      ${thumbHtml}
+      <div class="list-info">
+        <div class="list-name">${r.image}</div>
+        <div class="list-badges">
+          <span class="badge badge-fn">FN ${r.fn}</span>
+          <span class="badge badge-tp">TP ${r.tp}</span>
+          ${r.fp > 0 ? `<span class="badge badge-fp">FP ${r.fp}</span>` : ''}
+          <span class="badge badge-f1">F1 ${r.f1}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── IMAGE VIEWER ───────────────────────────────────────────────────
+async function selectImage(imageName) {
+  currentRow = csvRows.find(r => r.image === imageName);
+  if (!currentRow) return;
+
+  renderList(); // re-render to highlight active
+
+  const imgFile = imageMap[imageName];
+  const canvas = document.getElementById('main-canvas');
+  const origCanvas = document.getElementById('orig-canvas');
+  const ctx = canvas.getContext('2d');
+  const origCtx = origCanvas.getContext('2d');
+  const empty = document.getElementById('empty-state');
+  const splitView = document.getElementById('split-view');
+  const metricsBar = document.getElementById('metrics-bar');
+
+  document.getElementById('viewer-title').textContent = imageName;
+
+  // Update metrics
+  document.getElementById('m-fn').textContent = currentRow.fn;
+  document.getElementById('m-tp').textContent = currentRow.tp;
+  document.getElementById('m-fp').textContent = currentRow.fp;
+  document.getElementById('m-gt').textContent = currentRow.gt;
+  document.getElementById('m-pred').textContent = currentRow.pred;
+  document.getElementById('m-prec').textContent = currentRow.precision;
+  document.getElementById('m-rec').textContent = currentRow.recall;
+  document.getElementById('m-f1').textContent = currentRow.f1;
+  metricsBar.style.display = 'flex';
+
+  if (!imgFile) {
+    empty.style.display = 'flex';
+    empty.innerHTML = `<div class="big">🖼️</div><p>Image file not found for <code>${imageName}</code>.<br>Check that your images folder contains this file.</p>`;
+    splitView.style.display = 'none';
+    return;
+  }
+
+  const img = new Image();
+  img.src = URL.createObjectURL(imgFile);
+  await new Promise(res => { img.onload = res; });
+
+  const W = img.naturalWidth;
+  const H = img.naturalHeight;
+
+  // Scale each panel to half the canvas-wrap width
+  const wrap = document.getElementById('canvas-wrap');
+  const panelW = Math.floor(wrap.clientWidth / 2) - 32;
+  const panelH = wrap.clientHeight - 56; // leave room for label
+  const scale = Math.min(1, panelW / W, panelH / H);
+  const cw = Math.round(W * scale);
+  const ch = Math.round(H * scale);
+
+  // Original canvas — just the raw image
+  origCanvas.width = cw;
+  origCanvas.height = ch;
+  origCtx.clearRect(0, 0, cw, ch);
+  origCtx.drawImage(img, 0, 0, cw, ch);
+
+  // Annotated canvas — image + boxes
+  canvas.width = cw;
+  canvas.height = ch;
+  ctx.clearRect(0, 0, cw, ch);
+  ctx.drawImage(img, 0, 0, cw, ch);
+
+  // Draw boxes
+  const gtBoxes = gtMap[imageName] || [];
+  const predBoxes = predMap[imageName] || [];
+
+  // Find matched GT indices (TP)
+  const missedGT = new Set(
+  (currentRow.missed_gt_indices || '')
+    .split(';')
+    .filter(index => index !== '')
+    .map(Number)
+);
+
+  if (layers.gt) {
+    gtBoxes.forEach((box, i) => {
+      const isMissed = missedGT.has(i);
+      drawOBB(ctx, box.points, W, H, scale,
+        isMissed ? '#ef4444' : '#22c55e',
+        isMissed ? 'rgba(239,68,68,0.12)' : 'rgba(34,197,94,0.10)',
+        isMissed ? 2.5 : 1.5,
+        isMissed ? 'MISS' : null
+      );
+    });
+  }
+
+  if (layers.pred) {
+    predBoxes.forEach(box => {
+      drawOBB(ctx, box.points, W, H, scale,
+        '#60a5fa', 'rgba(96,165,250,0.08)', 1.5,
+        box.conf ? box.conf.toFixed(2) : null
+      );
+    });
+  }
+
+  empty.style.display = 'none';
+  splitView.style.display = 'block';
+}
+
+
+function drawOBB(ctx, points, imgW, imgH, scale, strokeColor, fillColor, lineWidth, label) {
+  if (!points || points.length < 4) return;
+  ctx.save();
+  ctx.beginPath();
+  points.forEach(([x, y], i) => {
+    const sx = x * imgW * scale, sy = y * imgH * scale;
+    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+  });
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = lineWidth;
+  ctx.stroke();
+
+  if (label) {
+    const [x0, y0] = points[0];
+    const sx = x0 * imgW * scale, sy = y0 * imgH * scale;
+    ctx.font = `bold ${Math.max(9, 11 * scale)}px monospace`;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = strokeColor;
+    ctx.fillRect(sx - 1, sy - 14 * scale, tw + 4, 13 * scale);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, sx + 1, sy - 3 * scale);
+  }
+  ctx.restore();
+}
+
+// ── LAYER TOGGLES ─────────────────────────────────────────────────
+function toggleLayer(name) {
+  layers[name] = !layers[name];
+  document.getElementById(`tog-${name}`).classList.toggle('on', layers[name]);
+  if (currentRow) selectImage(currentRow.image);
+}
+</script>
+</body>
+</html>
