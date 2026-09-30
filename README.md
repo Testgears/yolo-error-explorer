@@ -1,3 +1,9 @@
+# YOLO Error Explorer
+
+**[Live Demo](https://testgears.github.io/yolo-error-explorer/)**
+
+![YOLO Error Explorer dashboard](docs/dashboard.png) 
+
 YOLO Error Explorer is an interactive browser-based tool for visualizing and analyzing errors in YOLO oriented bounding box (OBB) detection results.
 
 It combines per-image evaluation metrics with visual inspection of ground-truth and predicted bounding boxes, making it easier to identify false negatives, false positives, and recurring model failure patterns.
