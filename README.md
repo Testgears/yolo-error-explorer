@@ -1,8 +1,18 @@
+<<<<<<< HEAD
 # YOLO Error Explorer
 
 **[Live Demo](https://testgears.github.io/yolo-error-explorer/)**
 
 ![YOLO Error Explorer dashboard](docs/dashboard.png) 
+=======
+# YOLO Error Visualizer
+
+## Demo
+
+**[Try the Live Demo](https://testgears.github.io/yolo-error-explorer/)**
+
+![YOLO Error Explorer dashboard](docs/images/dashboard.png)
+>>>>>>> db45927 (Add dashboard screenshot and live demo)
 
 YOLO Error Explorer is an interactive browser-based tool for visualizing and analyzing errors in YOLO oriented bounding box (OBB) detection results.
 
@@ -28,14 +38,17 @@ Features
 
 ## Project Structure
 
+```
 yolo-error-explorer/
+├── docs/
+│   └── images/
+│       └── dashboard.png
+├── examples/
+├── scripts/
 ├── index.html
 ├── README.md
-├── requirements.txt
-├── scripts/
-│   └── per_image_obb_metrics.py
-└── examples/
-    └── per_image_metrics.example.csv
+└── requirements.txt
+```
 
 ## Installation
 - Python 3.10 or later is recommended.
